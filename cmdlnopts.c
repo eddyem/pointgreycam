@@ -43,6 +43,7 @@ static glob_pars const Gdefault = {
     .device = NULL,
     .pidfile = DEFAULT_PIDFILE,
     .exptime = NAN,
+    .gain = NAN
 };
 
 /*
@@ -57,6 +58,10 @@ static myoption cmdlnopts[] = {
     {"verbose", NO_ARGS,    NULL,   'v',    arg_none,   APTR(&verbose_level), _("verbose level (each 'v' increases it)")},
     {"camno",   NEED_ARG,   NULL,   'n',    arg_int,    APTR(&G.camno),     _("camera number (if many connected)")},
     {"exptime", NEED_ARG,   NULL,   'x',    arg_float,  APTR(&G.exptime),   _("exposure time (ms)")},
+    {"gain",    NEED_ARG,   NULL,   'g',    arg_float,  APTR(&G.gain),      _("gain value (dB)")},
+    {"display", NO_ARGS,    NULL,   'D',    arg_int,    APTR(&G.showimage), _("display captured image")},
+    {"nimages", NEED_ARG,   NULL,   'N',    arg_int,    APTR(&G.nimages),   _("number of images to capture")},
+    {"png",     NO_ARGS,    NULL,   'p',    arg_int,    APTR(&G.save_png),  _("save png too")},
    end_option
 };
 
@@ -73,7 +78,7 @@ glob_pars *parse_args(int argc, char **argv){
     ptr = memcpy(&G, &Gdefault, sizeof(G)); assert(ptr);
     size_t hlen = 1024;
     char helpstring[1024], *hptr = helpstring;
-    snprintf(hptr, hlen, "Usage: %%s [args]\n\n\tWhere args are:\n");
+    snprintf(hptr, hlen, "Usage: %%s [args] [filename prefix]\n\n\tWhere args are:\n");
     // format of help: "Usage: progname [args]\n"
     change_helpstring(helpstring);
     // parse arguments
@@ -82,8 +87,10 @@ glob_pars *parse_args(int argc, char **argv){
     if(argc > 0){
         G.rest_pars_num = argc;
         G.rest_pars = MALLOC(char *, argc);
-        for (i = 0; i < argc; i++)
+        for (i = 0; i < argc; i++){
+            DBG("Found free parameter %s", argv[i]);
             G.rest_pars[i] = strdup(argv[i]);
+        }
     }
     return &G;
 }

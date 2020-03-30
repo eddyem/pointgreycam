@@ -27,6 +27,7 @@ typedef enum{
 } verblevel;
 
 int verbose(verblevel levl, const char *fmt, ...);
+char *check_filename(char *outfile, char *suff);
 
 #define VMESG(...)  do{verbose(VERB_MESG, __VA_ARGS__);}while(0)
 #define VDBG(...)   do{verbose(VERB_DEBUG, __VA_ARGS__);}while(0)

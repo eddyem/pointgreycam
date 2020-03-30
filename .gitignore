@@ -16,6 +16,8 @@
 
 # qt-creator
 *.config
-*.creator
+*.cflags
+*.cxxflags
+*.creator*
 *.files
 *.includes

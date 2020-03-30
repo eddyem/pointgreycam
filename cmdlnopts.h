@@ -27,9 +27,13 @@
 typedef struct{
     char *device;           // camera device name
     char *pidfile;          // name of PID file
-    int rest_pars_num;      // number of rest parameters
     int camno;              // number of camera to work with
     float exptime;          // exposition time
+    float gain;             // gain value
+    int showimage;          // display last captured image in OpenGL screen
+    int nimages;            // number of images to capture
+    int save_png;           // save png file
+    int rest_pars_num;      // number of rest parameters
     char** rest_pars;       // the rest parameters: array of char*
 } glob_pars;
 
