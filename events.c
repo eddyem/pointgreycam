@@ -35,6 +35,9 @@ static void processKeybrd(unsigned char key, int mod, _U_ int x, _U_ int y){
         key += 'a'-1;
         DBG("CTRL+%c", key);
         switch(key){
+            case 'r': // roll colorfun
+                win->winevt |= WINEVT_ROLLCOLORFUN;
+            break;
             case 's': // save image
                 win->winevt |= WINEVT_SAVEIMAGE;
             break;
@@ -50,20 +53,27 @@ static void processKeybrd(unsigned char key, int mod, _U_ int x, _U_ int y){
             win->zoom = 1;
             win->x = 0; win->y = 0;
         break;
-        case 27:
+        case 27: // esc - kill
             killwindow();
         break;
-        case 'l':
+        case 'c': // capture in pause mode
+            if(win->winevt & WINEVT_PAUSE)
+                win->winevt |= WINEVT_GETIMAGE;
+        break;
+        case 'l': // flip left-right
             win->flip ^= WIN_FLIP_LR;
         break;
-        case 'u':
+        case 'p': // pause capturing
+            win->winevt ^= WINEVT_PAUSE;
+        break;
+        case 'u': // flip up-down
             win->flip ^= WIN_FLIP_UD;
         break;
-        case 'Z':
+        case 'Z': // zoom+
             win->zoom *= 1.1f;
             calc_win_props(NULL, NULL);
         break;
-        case 'z':
+        case 'z': // zoom-
             win->zoom /= 1.1f;
             calc_win_props(NULL, NULL);
         break;
@@ -155,9 +165,12 @@ typedef struct{
 #define SHIFT_K(key)    (key | (GLUT_ACTIVE_SHIFT<<8))
 #define ALT_K(key)      (key | (GLUT_ACTIVE_ALT<<8))
 static const menuentry entries[] = {
-    {"Flip image LR", 'l'},
-    {"Flip image UD", 'u'},
+    {"Capture in pause mode (c)", 'c'},
+    {"Flip image LR (l)", 'l'},
+    {"Flip image UD (u)", 'u'},
+    {"Make a pause/continue (p)", 'p'},
     {"Restore zoom (0)", '0'},
+    {"Roll colorfun (ctrl+r)", CTRL_K('r')},
     {"Save image (ctrl+s)", CTRL_K('s')},
     {"Close this window (ESC)", 27},
     {"Quit (ctrl+q)", CTRL_K('q')},

@@ -43,49 +43,31 @@ void signals(int sig){
 static int GrabImage(fc2Context context, fc2Image *convertedImage){
     fc2Error error;
     fc2Image rawImage;
+    // start capture
+    FC2FNE(fc2StartCapture, context);
     error = fc2CreateImage(&rawImage);
-    if (error != FC2_ERROR_OK)
-    {
+    if(error != FC2_ERROR_OK){
         printf("Error in fc2CreateImage: %s\n", fc2ErrorToDescription(error));
         return -1;
     }
     // Retrieve the image
     error = fc2RetrieveBuffer(context, &rawImage);
-    if (error != FC2_ERROR_OK)
-    {
+    if (error != FC2_ERROR_OK){
         printf("Error in retrieveBuffer: %s\n", fc2ErrorToDescription(error));
         return -1;
     }
     // Convert image to gray
+    windowData *win = getWin();
+    if(win) pthread_mutex_lock(&win->mutex);
     error = fc2ConvertImageTo(FC2_PIXEL_FORMAT_MONO8, &rawImage, convertedImage);
-    if (error != FC2_ERROR_OK)
-    {
+    if(win) pthread_mutex_unlock(&win->mutex);
+    if(error != FC2_ERROR_OK){
         printf("Error in fc2ConvertImageTo: %s\n", fc2ErrorToDescription(error));
         return -1;
     }
+    fc2StopCapture(context);
     fc2DestroyImage(&rawImage);
     return 0;
-}
-
-// main thread to deal with image
-void* image_thread(_U_ void *data){
-	FNAME();
-	//struct timeval tv;
-	windowData *win = getWin();
-	// int w = win->image->w, h = win->image->h, x,y, id = win->ID;
-	// GLubyte i;
-	while(1){
-		pthread_mutex_lock(&win->mutex);
-		if(win->killthread){
-			pthread_mutex_unlock(&win->mutex);
-			DBG("got killthread");
-			pthread_exit(NULL);
-		}
-        // Do something here
-		//win->image->changed = 1;
-		pthread_mutex_unlock(&win->mutex);
-		usleep(10000);
-	}
 }
 
 /**
@@ -127,24 +109,37 @@ static void gray2rgb(double gray, GLubyte *rgb){
 typedef enum{
     COLORFN_LINEAR, // linear
     COLORFN_LOG,    // ln
-    COLORFN_SQRT    // sqrt
+    COLORFN_SQRT,   // sqrt
+    COLORFN_MAX     // end of list
 } colorfn_type;
+
+static colorfn_type ft = COLORFN_LINEAR;
 
 static double linfun(double arg){ return arg; } // bung for PREVIEW_LINEAR
 static double logfun(double arg){ return log(1.+arg); } // for PREVIEW_LOG
 static double (*colorfun)(double) = linfun; // default function to convert color
 
-void change_colorfun(colorfn_type f){
+static void change_colorfun(colorfn_type f){
+    DBG("New colorfn: %d", f);
     switch (f){
-        case COLORFN_LINEAR:
-            colorfun = linfun;
-        break;
         case COLORFN_LOG:
             colorfun = logfun;
+            ft = COLORFN_LOG;
         break;
-        default: // sqrt
+        case COLORFN_SQRT:
             colorfun = sqrt;
+            ft = COLORFN_SQRT;
+        break;
+        default: // linear
+            colorfun = linfun;
+            ft = COLORFN_LINEAR;
     }
+}
+
+static void roll_colorfun(){
+    colorfn_type t = ++ft;
+    if(t == COLORFN_MAX) t = COLORFN_LINEAR;
+    change_colorfun(t);
 }
 
 static void change_displayed_image(windowData *win, fc2Image *convertedImage){
@@ -208,6 +203,36 @@ static void saveImages(fc2Image *convertedImage, char *prefix){
         if(newname) savePng(convertedImage, newname);
     }
     // and save FITS here
+}
+
+// manage some menu/shortcut events
+static void winevt_manage(windowData *win, fc2Image *convertedImage){
+    if(win->winevt & WINEVT_SAVEIMAGE){ // save image
+        DBG("Try to make screenshot");
+        saveImages(convertedImage, "ScreenShot");
+        win->winevt &= ~WINEVT_SAVEIMAGE;
+    }
+    if(win->winevt & WINEVT_ROLLCOLORFUN){
+        roll_colorfun();
+        win->winevt &= ~WINEVT_ROLLCOLORFUN;
+        change_displayed_image(win, convertedImage);
+    }
+}
+
+// main thread to deal with image
+void* image_thread(_U_ void *data){
+	FNAME();
+    fc2Image *img = (fc2Image*) data;
+	while(1){
+        windowData *win = getWin();
+        if(!win) pthread_exit(NULL);
+		if(win->killthread){
+			DBG("got killthread");
+			pthread_exit(NULL);
+		}
+        if(win->winevt) winevt_manage(win, img);
+		usleep(10000);
+	}
 }
 
 int main(int argc, char **argv){
@@ -285,12 +310,9 @@ int main(int argc, char **argv){
         VMESG("Set gain value to %gdB", G.gain);
     }
 
-    FC2FNE(fc2StartCapture, context);
-
     if(G.showimage){
         imageview_init();
     }
-
     // main cycle
     fc2Image convertedImage;
     FC2FNE(fc2CreateImage, &convertedImage);
@@ -308,41 +330,43 @@ int main(int argc, char **argv){
         }
         if(G.showimage){
             if(!mainwin && start){
+                DBG("Create window @ start");
                 mainwin = createGLwin("Sample window", convertedImage.cols, convertedImage.rows, NULL);
                 start = FALSE;
                 if(!mainwin){
                     WARNX("Can't open OpenGL window, image preview will be inaccessible");
                 }else
-                    pthread_create(&mainwin->thread, NULL, &image_thread, NULL); //(void*)mainwin);
+                    pthread_create(&mainwin->thread, NULL, &image_thread, (void*)&convertedImage); //(void*)mainwin);
             }
             if((mainwin = getWin())){
-                if(mainwin->winevt & WINEVT_SAVEIMAGE){ // save image
-                    DBG("Try to make screenshot");
-                    saveImages(&convertedImage, "ScreenShot");
-                    mainwin->winevt &= ~WINEVT_SAVEIMAGE;
-                }
                 DBG("change image");
+                if(mainwin->killthread) goto destr;
                 change_displayed_image(mainwin, &convertedImage);
+                while((mainwin = getWin())){ // test paused state & grabbing custom frames
+                    if((mainwin->winevt & WINEVT_PAUSE) == 0) break;
+                    if(mainwin->winevt & WINEVT_GETIMAGE){
+                        mainwin->winevt &= ~WINEVT_GETIMAGE;
+                        if(!GrabImage(context, &convertedImage))
+                            change_displayed_image(mainwin, &convertedImage);
+                    }
+                    usleep(10000);
+                }
             }else break;
         }
         if(--G.nimages <= 0) break;
     }
-    FC2FNE(fc2DestroyImage, &convertedImage);
-
-    err = fc2StopCapture(context);
-    if(err != FC2_ERROR_OK){
-        fc2DestroyContext(context);
-        printf("Error in fc2StopCapture: %s\n", fc2ErrorToDescription(err));
-        signals(12);
-    }
-
-destr:
-    fc2DestroyContext(context);
+    if((mainwin = getWin())) mainwin->winevt |= WINEVT_PAUSE;
+destr:   
     if(G.showimage){
-        while(getWin());
+        while((mainwin = getWin())){
+            if(mainwin->killthread) break;
+        }
         DBG("Close window");
         clear_GL_context();
     }
+    FC2FNE(fc2DestroyImage, &convertedImage);
+    fc2StopCapture(context);
+    fc2DestroyContext(context);
     signals(ret);
     return ret;
 }

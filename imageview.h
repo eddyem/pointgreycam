@@ -35,10 +35,15 @@ typedef struct{
     int changed;       // == 1 if data was changed outside (to redraw)
 } rawimage;
 
-// events from menu
+// events from menu:
+// temporaly stop capture of regular sequence
 #define WINEVT_PAUSE        (1<<0)
-#define WINEVT_RESUME       (1<<1)
+// capture one image in pause mode
+#define WINEVT_GETIMAGE     (1<<1)
+// save current image
 #define WINEVT_SAVEIMAGE    (1<<2)
+// change color palette function
+#define WINEVT_ROLLCOLORFUN (1<<3)
 
 // flip image
 #define WIN_FLIP_LR         (1<<0)
