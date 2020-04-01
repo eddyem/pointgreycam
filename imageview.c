@@ -111,25 +111,28 @@ static void createWindow(){
 int killwindow(){
     if(!win) return 0;
     glutSetWindow(win->ID); // obviously set window (for closing from menu)
+    pthread_mutex_lock(&win->mutex);
     if(!win->killthread){
-        pthread_mutex_lock(&win->mutex);
         // say changed thread to die
         win->killthread = 1;
-        pthread_mutex_unlock(&win->mutex);
     }
     DBG("wait for changed thread");
     pthread_join(win->thread, NULL); // wait while thread dies
     if(win->menu) glutDestroyMenu(win->menu);
     glutDestroyWindow(win->ID);
-    DBG("destroy texture %d", win->Tex);
+    DBG("destroy menu, wundow & texture %d", win->Tex);
     glDeleteTextures(1, &(win->Tex));
-    glFinish();
+    //glFinish();
+    windowData *old = win;
+    win = NULL;
     DBG("free(rawdata)");
-    FREE(win->image->rawdata);
+    FREE(old->image->rawdata);
     DBG("free(image)");
-    FREE(win->image);
+    FREE(old->image);
+    pthread_mutex_unlock(&old->mutex);
     DBG("free(win)");
-    FREE(win);
+    FREE(old);
+    DBG("return");
     return 1;
 }
 
@@ -202,8 +205,8 @@ static void *Redraw(_U_ void *arg){
     FNAME();
     while(1){
         if(!initialized){
-            DBG("!initialized");
-            pthread_exit(NULL);
+            DBG("!initialized -> exit thread");
+            return NULL;
         }
         if(win && win->ID > 0){
             redisplay(win->ID);
@@ -306,6 +309,7 @@ void clear_GL_context(){
     DBG("kill");
     killwindow();
     DBG("join");
+    //pthread_cancel(GLUTthread);
     pthread_join(GLUTthread, NULL); // wait while main thread exits
     DBG("main GL thread cancelled");
 }

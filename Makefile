@@ -2,7 +2,7 @@
 PROGRAM := grasshopper
 LDFLAGS := -fdata-sections -ffunction-sections -Wl,--gc-sections -Wl,--discard-all
 LDFLAGS += -lusefull_macros -lflycapture-c -lflycapture -L/usr/local/lib
-LDFLAGS += -lm -pthread -lglut -lGL -lX11
+LDFLAGS += -lm -pthread -lglut -lGL -lX11 -lcfitsio
 SRCS := $(wildcard *.c)
 DEFINES := $(DEF) -D_GNU_SOURCE -D_XOPEN_SOURCE=1111
 OBJDIR := mk

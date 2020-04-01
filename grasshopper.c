@@ -25,6 +25,7 @@
 #include "aux.h"
 #include "camera_functions.h"
 #include "cmdlnopts.h"
+#include "image_functions.h"
 #include "imageview.h"
 
 void signals(int sig){
@@ -37,156 +38,6 @@ void signals(int sig){
         unlink(G.pidfile);
     restore_console();
     exit(sig);
-}
-
-
-static int GrabImage(fc2Context context, fc2Image *convertedImage){
-    fc2Error error;
-    fc2Image rawImage;
-    // start capture
-    FC2FNE(fc2StartCapture, context);
-    error = fc2CreateImage(&rawImage);
-    if(error != FC2_ERROR_OK){
-        printf("Error in fc2CreateImage: %s\n", fc2ErrorToDescription(error));
-        return -1;
-    }
-    // Retrieve the image
-    error = fc2RetrieveBuffer(context, &rawImage);
-    if (error != FC2_ERROR_OK){
-        printf("Error in retrieveBuffer: %s\n", fc2ErrorToDescription(error));
-        return -1;
-    }
-    // Convert image to gray
-    windowData *win = getWin();
-    if(win) pthread_mutex_lock(&win->mutex);
-    error = fc2ConvertImageTo(FC2_PIXEL_FORMAT_MONO8, &rawImage, convertedImage);
-    if(win) pthread_mutex_unlock(&win->mutex);
-    if(error != FC2_ERROR_OK){
-        printf("Error in fc2ConvertImageTo: %s\n", fc2ErrorToDescription(error));
-        return -1;
-    }
-    fc2StopCapture(context);
-    fc2DestroyImage(&rawImage);
-    return 0;
-}
-
-/**
- * Convert gray (unsigned short) into RGB components (GLubyte)
- * @argument L   - gray level
- * @argument rgb - rgb array (GLubyte [3])
- */
-static void gray2rgb(double gray, GLubyte *rgb){
-    int i = gray * 4.;
-    double x = (gray - (double)i * .25) * 4.;
-    GLubyte r = 0, g = 0, b = 0;
-    //r = g = b = (gray < 1) ? gray * 256 : 255;
-    switch(i){
-        case 0:
-            g = (GLubyte)(255. * x);
-            b = 255;
-        break;
-        case 1:
-            g = 255;
-            b = (GLubyte)(255. * (1. - x));
-        break;
-        case 2:
-            r = (GLubyte)(255. * x);
-            g = 255;
-        break;
-        case 3:
-            r = 255;
-            g = (GLubyte)(255. * (1. - x));
-        break;
-        default:
-            r = 255;
-    }
-    *rgb++ = r;
-    *rgb++ = g;
-    *rgb   = b;
-}
-
-// functions for converting grayscale value into colour
-typedef enum{
-    COLORFN_LINEAR, // linear
-    COLORFN_LOG,    // ln
-    COLORFN_SQRT,   // sqrt
-    COLORFN_MAX     // end of list
-} colorfn_type;
-
-static colorfn_type ft = COLORFN_LINEAR;
-
-static double linfun(double arg){ return arg; } // bung for PREVIEW_LINEAR
-static double logfun(double arg){ return log(1.+arg); } // for PREVIEW_LOG
-static double (*colorfun)(double) = linfun; // default function to convert color
-
-static void change_colorfun(colorfn_type f){
-    DBG("New colorfn: %d", f);
-    switch (f){
-        case COLORFN_LOG:
-            colorfun = logfun;
-            ft = COLORFN_LOG;
-        break;
-        case COLORFN_SQRT:
-            colorfun = sqrt;
-            ft = COLORFN_SQRT;
-        break;
-        default: // linear
-            colorfun = linfun;
-            ft = COLORFN_LINEAR;
-    }
-}
-
-static void roll_colorfun(){
-    colorfn_type t = ++ft;
-    if(t == COLORFN_MAX) t = COLORFN_LINEAR;
-    change_colorfun(t);
-}
-
-static void change_displayed_image(windowData *win, fc2Image *convertedImage){
-    if(!win || !win->image) return;
-    rawimage *im = win->image;
-    DBG("imh=%d, imw=%d, ch=%u, cw=%u", im->h, im->w, convertedImage->rows, convertedImage->cols);
-    /*
-    if(!im->rawdata || im->h != (int)convertedImage->rows || im->w != (int)convertedImage->cols){
-        DBG("[re]allocate im->rawdata");
-        FREE(im->rawdata);
-        im->h = (int)convertedImage->rows;
-        im->w = (int)convertedImage->cols;
-        im->rawdata = MALLOC(GLubyte, 3 * im->h * im->w);
-        if(!im->rawdata) ERR("Can't allocate memory");
-    }
-    printf("image data:\n");
-    printf("rows=%u, cols=%u, stride=%u, datasize=%u, recds=%u\n", convertedImage->rows,
-       convertedImage->cols, convertedImage->stride, convertedImage->dataSize, convertedImage->receivedDataSize);
-    */
-    pthread_mutex_lock(&win->mutex);
-    int  x, y, w = convertedImage->cols, h = convertedImage->rows;
-    double avr, wd, max, min;
-    avr = max = min = (double)*convertedImage->pData;
-    for(y = 0; y < h; ++y){
-        unsigned char *ptr = &convertedImage->pData[y*convertedImage->stride];
-        for(x = 0; x < w; ++x, ++ptr){
-            double pix = (double) *ptr;
-            if(pix > max) max = pix;
-            if(pix < min) min = pix;
-            avr += pix;
-        }
-    }
-    avr /= (double)(w*h);
-    wd = max - min;
-    if(wd > DBL_EPSILON) avr = (avr - min) / wd;	// normal average by preview
-    if(avr < 0.6) wd *= avr + 0.2;
-    if(wd < DBL_EPSILON) wd = 1.;
-    DBG("stat: sz=(%dx%d) avr=%g wd=%g max=%g min=%g", w,h,avr, wd, max, min);
-    GLubyte *dst = im->rawdata;
-    for(y = 0; y < h; y++){
-        unsigned char *ptr = &convertedImage->pData[y*convertedImage->stride];
-        for(x = 0; x < w; x++, dst += 3, ++ptr){
-            gray2rgb(colorfun((*ptr - min) / wd), dst);
-        }
-    }
-    win->image->changed = 1;
-    pthread_mutex_unlock(&win->mutex);
 }
 
 static void savePng(fc2Image *convertedImage, char *name){
@@ -203,12 +54,15 @@ static void saveImages(fc2Image *convertedImage, char *prefix){
         if(newname) savePng(convertedImage, newname);
     }
     // and save FITS here
+    char *newname = check_filename(prefix, "fits");
+    if(newname && writefits(newname, convertedImage))
+        VDBG("FITS file saved into %s", newname);
 }
 
 // manage some menu/shortcut events
 static void winevt_manage(windowData *win, fc2Image *convertedImage){
     if(win->winevt & WINEVT_SAVEIMAGE){ // save image
-        DBG("Try to make screenshot");
+        VDBG("Try to make screenshot");
         saveImages(convertedImage, "ScreenShot");
         win->winevt &= ~WINEVT_SAVEIMAGE;
     }
@@ -288,7 +142,12 @@ int main(int argc, char **argv){
     if(verbose_level >= VERB_MESG && numCameras > 1) PrintCameraInfo(context, G.camno);
     if(isnan(G.exptime)){ // no expose time -> return
         printf("No exposure parameters given -> exit\n");
-        goto destr;
+        fc2StopCapture(context);
+        fc2DestroyContext(context);
+        signals(ret);
+    }
+    if(!G.showimage && !outfprefix){ // not display image & not save it?
+        ERRX("You should point file name or option `display image`");
     }
     // turn off all shit
     autoExpOff(context);
@@ -360,6 +219,11 @@ destr:
     if(G.showimage){
         while((mainwin = getWin())){
             if(mainwin->killthread) break;
+            if(mainwin->winevt & WINEVT_GETIMAGE){
+                mainwin->winevt &= ~WINEVT_GETIMAGE;
+                if(!GrabImage(context, &convertedImage))
+                    change_displayed_image(mainwin, &convertedImage);
+            }
         }
         DBG("Close window");
         clear_GL_context();

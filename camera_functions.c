@@ -59,7 +59,7 @@ static void prbl(char *s, BOOL prop){
 }
 
 fc2Error getproperty(fc2Context context, fc2PropertyType t){
-    fc2Property prop;
+    fc2Property prop = {0};
     prop.type = t;
     FC2FNW(fc2GetProperty, context, &prop);
     if(!prop.present) return FC2_ERROR_NOT_FOUND;
@@ -75,7 +75,7 @@ fc2Error getproperty(fc2Context context, fc2PropertyType t){
 }
 
 fc2Error getpropertyInfo(fc2Context context, fc2PropertyType t){
-    fc2PropertyInfo i;
+    fc2PropertyInfo i = {0};
     i.type = t;
     FC2FNW(fc2GetPropertyInfo, context, &i);
     if(!i.present) return FC2_ERROR_NOT_FOUND;
@@ -104,9 +104,9 @@ fc2Error getpropertyInfo(fc2Context context, fc2PropertyType t){
  * @return FC2_ERROR_OK if all OK
  */
 fc2Error setfloat(fc2PropertyType t, fc2Context context, float f){
-    fc2Property prop;
+    fc2Property prop = {0};
     prop.type = t;
-    fc2PropertyInfo i;
+    fc2PropertyInfo i = {0};
     i.type = t;
     FC2FNW(fc2GetProperty, context, &prop);
     FC2FNW(fc2GetPropertyInfo, context, &i);
@@ -146,9 +146,9 @@ fc2Error setfloat(fc2PropertyType t, fc2Context context, float f){
 }
 
 fc2Error propOnOff(fc2PropertyType t, fc2Context context, BOOL onOff){
-    fc2Property prop;
+    fc2Property prop = {0};
     prop.type = t;
-    fc2PropertyInfo i;
+    fc2PropertyInfo i = {0};
     i.type = t;
     FC2FNW(fc2GetPropertyInfo, context, &i);
     FC2FNW(fc2GetProperty, context, &prop);

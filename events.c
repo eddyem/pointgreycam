@@ -57,6 +57,7 @@ static void processKeybrd(unsigned char key, int mod, _U_ int x, _U_ int y){
             killwindow();
         break;
         case 'c': // capture in pause mode
+            DBG("winevt = %d", win->winevt);
             if(win->winevt & WINEVT_PAUSE)
                 win->winevt |= WINEVT_GETIMAGE;
         break;
